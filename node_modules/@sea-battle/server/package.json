@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('src/migrations', 'dist/migrations', {recursive:true})\"",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",

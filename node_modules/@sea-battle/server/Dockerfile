@@ -17,7 +17,7 @@ RUN npm ci --workspace=packages/domain --workspace=packages/server
 COPY packages/domain/ ./packages/domain/
 COPY packages/server/ ./packages/server/
 
-# Build domain first, then server
+# Build domain first, then server (build script also copies migrations)
 RUN npm run build --workspace=packages/domain || true
 RUN npm run build --workspace=packages/server
 
