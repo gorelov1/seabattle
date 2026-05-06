@@ -59,7 +59,7 @@ export interface AuthToken {
   expiresAt: string;
   tokenId: string;
   /** The raw JWT string to include in Authorization headers. */
-  token: string;
+  jwt: string;
 }
 
 /** Fields that can be updated on a user profile. */

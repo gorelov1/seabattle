@@ -2,10 +2,13 @@
  * App — root component that manages screen navigation and game state.
  *
  * Screens:
- *   - mainMenu: the main menu
- *   - localGame: local two-player game (placement → shooting → result)
- *   - aiGame: single-player vs AI (placement → shooting → result)
- *   - accountSettings: placeholder for account management
+ *   - mainMenu
+ *   - localGame / aiGame  (offline)
+ *   - onlineAuth          (login/register before online play)
+ *   - onlineInvite        (create/join via invite code)
+ *   - onlineMatchmaking   (random opponent queue)
+ *   - onlineGame          (active online match)
+ *   - accountSettings
  *
  * Requirements: 5.1, 5.3, 9.4, 12.1, 12.2, 12.6, 13.1, 14.1, 14.3, 14.4
  */
@@ -24,6 +27,11 @@ import { MainMenu } from './components/MainMenu';
 import { PlacementPhase } from './components/PlacementPhase';
 import { ShootingPhase } from './components/ShootingPhase';
 import { MatchResult } from './components/MatchResult';
+import { OnlineAuth } from './components/OnlineAuth';
+import { OnlineInvite } from './components/OnlineInvite';
+import { OnlineMatchmaking } from './components/OnlineMatchmaking';
+import { OnlineGame } from './components/OnlineGame';
+import type { AuthToken, UserAccount } from './types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,13 +41,18 @@ type Screen =
   | 'mainMenu'
   | 'localGame'
   | 'aiGame'
-  | 'onlineInvite'
-  | 'onlineMatchmaking'
+  | 'onlineAuth'        // login/register
+  | 'onlineInvite'      // invite-code flow
+  | 'onlineMatchmaking' // random queue
+  | 'onlineGame'        // active online match
   | 'accountSettings';
+
+/** Which online flow the user chose before hitting the auth screen. */
+type OnlineIntent = 'invite' | 'matchmaking' | null;
 
 type GamePhase = 'placement' | 'shooting' | 'finished';
 
-interface GameState {
+interface LocalGameState {
   game: LocalGame;
   phase: GamePhase;
   myPlayerId: string;
@@ -83,16 +96,28 @@ function placementErrorMessage(err: PlacementError | string): string {
 
 export default function App(): React.ReactElement {
   const [screen, setScreen] = React.useState<Screen>('mainMenu');
-  const [gameState, setGameState] = React.useState<GameState | null>(null);
+  const [localGameState, setLocalGameState] = React.useState<LocalGameState | null>(null);
+
+  // Online play state
+  const [authToken, setAuthToken] = React.useState<AuthToken | null>(null);
+  const [currentUser, setCurrentUser] = React.useState<UserAccount | null>(null);
+  const [onlineIntent, setOnlineIntent] = React.useState<OnlineIntent>(null);
+  const [onlineSessionId, setOnlineSessionId] = React.useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
-  // Navigation handlers
+  // Navigation
   // ---------------------------------------------------------------------------
+
+  const goToMainMenu = React.useCallback(() => {
+    setLocalGameState(null);
+    setOnlineSessionId(null);
+    setScreen('mainMenu');
+  }, []);
 
   const startLocalGame = React.useCallback(() => {
     const game = new LocalGame('local', PLAYER_A, PLAYER_B);
     const state = game.getState();
-    setGameState({
+    setLocalGameState({
       game,
       phase: 'placement',
       myPlayerId: PLAYER_A,
@@ -107,7 +132,7 @@ export default function App(): React.ReactElement {
   const startAiGame = React.useCallback(() => {
     const game = new LocalGame('ai', PLAYER_A, AI_ID);
     const state = game.getState();
-    setGameState({
+    setLocalGameState({
       game,
       phase: 'placement',
       myPlayerId: PLAYER_A,
@@ -119,183 +144,217 @@ export default function App(): React.ReactElement {
     setScreen('aiGame');
   }, []);
 
-  const goToMainMenu = React.useCallback(() => {
-    setGameState(null);
-    setScreen('mainMenu');
+  // Online: go to auth first, then to the intended flow
+  const startOnlineInvite = React.useCallback(() => {
+    setOnlineIntent('invite');
+    if (authToken) {
+      setScreen('onlineInvite');
+    } else {
+      setScreen('onlineAuth');
+    }
+  }, [authToken]);
+
+  const startOnlineMatchmaking = React.useCallback(() => {
+    setOnlineIntent('matchmaking');
+    if (authToken) {
+      setScreen('onlineMatchmaking');
+    } else {
+      setScreen('onlineAuth');
+    }
+  }, [authToken]);
+
+  const handleAuth = React.useCallback((token: AuthToken, account: UserAccount) => {
+    setAuthToken(token);
+    setCurrentUser(account);
+    // Proceed to the intended online flow
+    if (onlineIntent === 'invite') setScreen('onlineInvite');
+    else if (onlineIntent === 'matchmaking') setScreen('onlineMatchmaking');
+    else setScreen('mainMenu');
+  }, [onlineIntent]);
+
+  const handleSessionReady = React.useCallback((sessionId: string) => {
+    setOnlineSessionId(sessionId);
+    setScreen('onlineGame');
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Placement handlers
+  // Local game — placement handlers
   // ---------------------------------------------------------------------------
 
-  const handlePlaceShip = React.useCallback(
-    (placement: ShipPlacement) => {
-      if (!gameState) return;
-      const { game, myPlayerId } = gameState;
-
-      const result = game.placeShip(myPlayerId, placement);
-      const state = game.getState();
-
-      if (!result.ok) {
-        setGameState((prev) =>
-          prev
-            ? {
-                ...prev,
-                myBoard: state.boardA,
-                placementError: placementErrorMessage(
-                  result.error as PlacementError | string,
-                ),
-              }
-            : prev,
-        );
-        return;
-      }
-
-      setGameState((prev) =>
-        prev
-          ? {
-              ...prev,
-              myBoard: state.boardA,
-              placementError: undefined,
-            }
-          : prev,
-      );
-    },
-    [gameState],
-  );
+  const handlePlaceShip = React.useCallback((placement: ShipPlacement) => {
+    if (!localGameState) return;
+    const { game, myPlayerId } = localGameState;
+    const result = game.placeShip(myPlayerId, placement);
+    const state = game.getState();
+    if (!result.ok) {
+      setLocalGameState((prev) => prev ? {
+        ...prev,
+        myBoard: state.boardA,
+        placementError: placementErrorMessage(result.error as PlacementError | string),
+      } : prev);
+      return;
+    }
+    setLocalGameState((prev) => prev ? { ...prev, myBoard: state.boardA, placementError: undefined } : prev);
+  }, [localGameState]);
 
   const handleAutoPlace = React.useCallback(() => {
-    if (!gameState) return;
-    const { myPlayerId } = gameState;
-
-    // Generate a random valid fleet placement
+    if (!localGameState) return;
+    const { myPlayerId } = localGameState;
     const autoBoard = placeFleet(FLEET_SPEC);
-
-    // Re-create the game and replay the auto-placed ships
     const newGame = new LocalGame(
       screen === 'aiGame' ? 'ai' : 'local',
       myPlayerId,
-      gameState.opponentPlayerId,
+      localGameState.opponentPlayerId,
     );
-
     for (const ship of autoBoard.ships) {
       const origin = ship.cells[0];
-      const isHorizontal =
-        ship.cells.length === 1 ||
-        ship.cells[0].row === ship.cells[1].row;
+      const isHorizontal = ship.cells.length === 1 || ship.cells[0].row === ship.cells[1].row;
       newGame.placeShip(myPlayerId, {
         type: ship.type,
         origin,
         orientation: isHorizontal ? Orientation.Horizontal : Orientation.Vertical,
       });
     }
-
     const state = newGame.getState();
-    setGameState((prev) =>
-      prev
-        ? {
-            ...prev,
-            game: newGame,
-            myBoard: state.boardA,
-            opponentBoard: state.boardB,
-            placementError: undefined,
-          }
-        : prev,
-    );
-  }, [gameState, screen]);
+    setLocalGameState((prev) => prev ? {
+      ...prev,
+      game: newGame,
+      myBoard: state.boardA,
+      opponentBoard: state.boardB,
+      placementError: undefined,
+    } : prev);
+  }, [localGameState, screen]);
 
   const handleReady = React.useCallback(() => {
-    if (!gameState) return;
-    const { game } = gameState;
-
-    const result = game.startMatch();
+    if (!localGameState) return;
+    const result = localGameState.game.startMatch();
     if (!result.ok) return;
+    const state = localGameState.game.getState();
+    setLocalGameState((prev) => prev ? {
+      ...prev,
+      phase: 'shooting',
+      myBoard: state.boardA,
+      opponentBoard: state.boardB,
+      activePlayer: state.activePlayer,
+    } : prev);
+  }, [localGameState]);
 
+  // ---------------------------------------------------------------------------
+  // Local game — shooting handler
+  // ---------------------------------------------------------------------------
+
+  const handleFireShot = React.useCallback((coord: Coordinate) => {
+    if (!localGameState) return;
+    const { game, myPlayerId } = localGameState;
+    const result = game.fireShot(myPlayerId, coord);
+    if (!result.ok) return;
+    const { outcome, winner } = result.value;
     const state = game.getState();
-    setGameState((prev) =>
-      prev
-        ? {
-            ...prev,
-            phase: 'shooting',
-            myBoard: state.boardA,
-            opponentBoard: state.boardB,
-            activePlayer: state.activePlayer,
-          }
-        : prev,
-    );
-  }, [gameState]);
-
-  // ---------------------------------------------------------------------------
-  // Shooting handler
-  // ---------------------------------------------------------------------------
-
-  const handleFireShot = React.useCallback(
-    (coord: Coordinate) => {
-      if (!gameState) return;
-      const { game, myPlayerId } = gameState;
-
-      const result = game.fireShot(myPlayerId, coord);
-      if (!result.ok) return;
-
-      const { outcome, winner } = result.value;
-      const state = game.getState();
-
-      setGameState((prev) =>
-        prev
-          ? {
-              ...prev,
-              myBoard: state.boardA,
-              opponentBoard: state.boardB,
-              activePlayer: state.activePlayer,
-              lastShotResult: outcome,
-              phase: winner ? 'finished' : 'shooting',
-              winner: winner?.playerId,
-            }
-          : prev,
-      );
-    },
-    [gameState],
-  );
+    setLocalGameState((prev) => prev ? {
+      ...prev,
+      myBoard: state.boardA,
+      opponentBoard: state.boardB,
+      activePlayer: state.activePlayer,
+      lastShotResult: outcome,
+      phase: winner ? 'finished' : 'shooting',
+      winner: winner?.playerId,
+    } : prev);
+  }, [localGameState]);
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
-  if (screen === 'mainMenu' || !gameState) {
+  // Main menu
+  if (screen === 'mainMenu') {
     return (
       <MainMenu
         onLocalGame={startLocalGame}
         onAiGame={startAiGame}
-        onInviteGame={() => setScreen('onlineInvite')}
-        onMatchmaking={() => setScreen('onlineMatchmaking')}
+        onInviteGame={startOnlineInvite}
+        onMatchmaking={startOnlineMatchmaking}
         onAccountSettings={() => setScreen('accountSettings')}
-        currentUser={null}
+        currentUser={currentUser}
       />
     );
   }
 
+  // Account settings (placeholder)
   if (screen === 'accountSettings') {
     return (
-      <div style={{ padding: 32, textAlign: 'center' }}>
+      <div style={{ padding: 32, textAlign: 'center', color: '#f8fafc', backgroundColor: '#0f172a', minHeight: '100vh' }}>
         <h2>Account Settings</h2>
-        <p>Account management coming soon.</p>
-        <button onClick={goToMainMenu}>Back to Main Menu</button>
+        {currentUser ? (
+          <p>Logged in as <strong>{currentUser.displayName}</strong> ({currentUser.email})</p>
+        ) : (
+          <p>Not logged in.</p>
+        )}
+        <button onClick={goToMainMenu} style={{ marginTop: 16, padding: '10px 24px', borderRadius: 8, border: '1px solid #334155', backgroundColor: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>
+          ← Back to Main Menu
+        </button>
       </div>
     );
   }
 
-  if (screen === 'onlineInvite' || screen === 'onlineMatchmaking') {
+  // Online auth
+  if (screen === 'onlineAuth') {
     return (
-      <div style={{ padding: 32, textAlign: 'center' }}>
-        <h2>Online Play</h2>
-        <p>Online multiplayer coming soon.</p>
-        <button onClick={goToMainMenu}>Back to Main Menu</button>
-      </div>
+      <OnlineAuth
+        onAuth={handleAuth}
+        onBack={goToMainMenu}
+      />
     );
   }
 
-  const { phase, myBoard, opponentBoard, activePlayer, myPlayerId, winner, lastShotResult } =
-    gameState;
+  // Online invite
+  if (screen === 'onlineInvite' && authToken) {
+    return (
+      <OnlineInvite
+        token={authToken}
+        onSessionReady={(sessionId) => handleSessionReady(sessionId)}
+        onBack={goToMainMenu}
+      />
+    );
+  }
+
+  // Online matchmaking
+  if (screen === 'onlineMatchmaking' && authToken) {
+    return (
+      <OnlineMatchmaking
+        token={authToken}
+        onSessionReady={(sessionId) => handleSessionReady(sessionId)}
+        onBack={goToMainMenu}
+      />
+    );
+  }
+
+  // Active online game
+  if (screen === 'onlineGame' && authToken && onlineSessionId) {
+    return (
+      <OnlineGame
+        sessionId={onlineSessionId}
+        token={authToken}
+        onMainMenu={goToMainMenu}
+      />
+    );
+  }
+
+  // ---- Local / AI game screens ----
+
+  if (!localGameState) {
+    return (
+      <MainMenu
+        onLocalGame={startLocalGame}
+        onAiGame={startAiGame}
+        onInviteGame={startOnlineInvite}
+        onMatchmaking={startOnlineMatchmaking}
+        onAccountSettings={() => setScreen('accountSettings')}
+        currentUser={currentUser}
+      />
+    );
+  }
+
+  const { phase, myBoard, opponentBoard, activePlayer, myPlayerId, winner, lastShotResult } = localGameState;
 
   if (phase === 'finished' && winner !== undefined) {
     return (
@@ -316,13 +375,12 @@ export default function App(): React.ReactElement {
         onPlaceShip={handlePlaceShip}
         onReady={handleReady}
         onAutoPlace={screen === 'aiGame' ? handleAutoPlace : undefined}
-        error={gameState.placementError}
+        error={localGameState.placementError}
         isReady={myBoard.ready}
       />
     );
   }
 
-  // Shooting phase
   return (
     <ShootingPhase
       myBoard={myBoard}

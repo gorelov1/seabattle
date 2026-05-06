@@ -97,7 +97,7 @@ describe('NetworkManager REST helpers', () => {
         issuedAt: '2024-01-01T00:00:00.000Z',
         expiresAt: '2024-01-02T00:00:00.000Z',
         tokenId: 'tok-1',
-        token: 'jwt.token.here',
+        jwt: 'jwt.token.here',
       };
 
       fetchSpy.mockResolvedValueOnce(mockResponse(authToken, 200));
