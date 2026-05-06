@@ -1,0 +1,1 @@
+{"version":3,"file":"shotEngine.d.ts","sourceRoot":"","sources":["../src/shotEngine.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,OAAO,EACL,KAAK,KAAK,EAGV,KAAK,UAAU,EACf,KAAK,MAAM,EAEX,SAAS,EAET,KAAK,UAAU,EAGhB,MAAM,YAAY,CAAC;AA4DpB;;;;;;;;;;;;;;;;GAgBG;AACH,wBAAgB,WAAW,CACzB,KAAK,EAAE,KAAK,EACZ,KAAK,EAAE,UAAU,GAChB,MAAM,CAAC,UAAU,EAAE,SAAS,CAAC,CAiH/B"}
