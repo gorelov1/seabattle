@@ -7,6 +7,11 @@
     "dev": "vite --force",
     "build": "vite build",
     "preview": "vite preview",
+    "cap:init": "npx cap init",
+    "cap:add:android": "npx cap add android",
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android",
+    "build:android": "npm run build && npx cap sync android",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -28,6 +33,7 @@
     "@vitejs/plugin-react": "^4.3.1",
     "fast-check": "^3.19.0",
     "jsdom": "^29.1.1",
+    "sharp": "^0.34.5",
     "typescript": "^5.4.5",
     "vite": "^5.3.1",
     "vitest": "^1.6.0"
