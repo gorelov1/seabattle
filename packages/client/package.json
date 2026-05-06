@@ -12,6 +12,7 @@
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android",
     "build:android": "npm run build && npx cap sync android",
+    "icons:android": "node scripts/generate-icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
