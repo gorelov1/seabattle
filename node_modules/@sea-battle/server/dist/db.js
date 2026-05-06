@@ -3,7 +3,7 @@
  * and exports a singleton `db` instance plus typed query helpers.
  */
 import { createRequire } from "module";
-import { readFileSync } from "fs";
+import { readFileSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 // better-sqlite3 is a CommonJS module; use createRequire to import it in ESM.
@@ -17,6 +17,9 @@ const __dirname = dirname(__filename);
 // ---------------------------------------------------------------------------
 // On Render, the persistent disk is mounted at /data
 const dbPath = process.env["DB_PATH"] ?? (process.env["NODE_ENV"] === "production" ? "/data/sea-battle.db" : "./sea-battle.db");
+// Ensure the directory exists before SQLite tries to open the file
+const dbDir = dirname(dbPath);
+mkdirSync(dbDir, { recursive: true });
 export const db = new Database(dbPath);
 // Enable WAL mode for better concurrent read performance and foreign-key enforcement.
 db.pragma("journal_mode = WAL");
