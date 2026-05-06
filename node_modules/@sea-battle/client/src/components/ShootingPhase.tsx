@@ -1,11 +1,13 @@
 /**
- * ShootingPhase — displays both boards side-by-side during the shooting phase.
+ * ShootingPhase — displays both boards side-by-side during the shooting phase,
+ * plus a ship status panel for each player.
  *
  * Requirements: 6.1–6.5, 7.1–7.4, 8.1–8.4, 13.6, 13.7
  */
 
 import React from 'react';
-import type { Board, Coordinate } from '@sea-battle/domain';
+import { ShipType, shipSize } from '@sea-battle/domain';
+import type { Board, Coordinate, Ship } from '@sea-battle/domain';
 import { BoardGrid } from './BoardGrid';
 
 // ---------------------------------------------------------------------------
@@ -13,18 +15,118 @@ import { BoardGrid } from './BoardGrid';
 // ---------------------------------------------------------------------------
 
 export interface ShootingPhaseProps {
-  /** Own board — ships visible, incoming shots shown. */
   myBoard: Board;
-  /** Opponent board — only shot results visible (no ships unless sunk). */
   opponentBoard: Board;
-  /** PlayerId of whoever's turn it currently is. */
   activePlayer: string;
-  /** This client's player ID. */
   myPlayerId: string;
-  /** Called when this player fires a shot at the opponent's board. */
   onFireShot: (coord: Coordinate) => void;
-  /** Optional feedback string after the last shot: "Miss" | "Hit" | "Sunk". */
   lastShotResult?: string;
+  /** Serialized coord of the last shot on the opponent board, e.g. "G7" */
+  lastOpponentShotCoord?: string;
+  /** Serialized coord of the last shot on my board (incoming), e.g. "B3" */
+  lastIncomingShotCoord?: string;
+  /** When true, disable firing (e.g. AI is thinking) */
+  disabled?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Ship status panel
+// ---------------------------------------------------------------------------
+
+const SHIP_ORDER: ShipType[] = [
+  ShipType.Battleship,
+  ShipType.Cruiser,
+  ShipType.Destroyer,
+  ShipType.PatrolBoat,
+];
+
+const SHIP_LABEL: Record<ShipType, string> = {
+  [ShipType.Battleship]: 'Battleship',
+  [ShipType.Cruiser]:    'Cruiser',
+  [ShipType.Destroyer]:  'Destroyer',
+  [ShipType.PatrolBoat]: 'Patrol Boat',
+};
+
+function shipStatus(ship: Ship): 'sunk' | 'hit' | 'healthy' {
+  if (ship.sunk) return 'sunk';
+  if (ship.hitCount > 0) return 'hit';
+  return 'healthy';
+}
+
+interface FleetPanelProps {
+  ships: Ship[];
+  label: string;
+  /** If true, ships are shown as "?" (opponent — don't reveal positions) */
+  hidden?: boolean;
+}
+
+function FleetPanel({ ships, label, hidden = false }: FleetPanelProps): React.ReactElement {
+  // Group by type
+  const byType = React.useMemo(() => {
+    const map = new Map<ShipType, Ship[]>();
+    for (const type of SHIP_ORDER) map.set(type, []);
+    for (const ship of ships) {
+      map.get(ship.type)?.push(ship);
+    }
+    return map;
+  }, [ships]);
+
+  return (
+    <div style={{ minWidth: 160 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#94a3b8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+        {label}
+      </div>
+      {SHIP_ORDER.map((type) => {
+        const group = byType.get(type) ?? [];
+        const size = shipSize(type);
+        return (
+          <div key={type} style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 3 }}>
+              {SHIP_LABEL[type]} ({size})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {group.map((ship, i) => {
+                const st = hidden ? 'hidden' : shipStatus(ship);
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {/* Segment pips */}
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {Array.from({ length: size }).map((_, seg) => {
+                        let bg = '#475569'; // healthy
+                        if (st === 'sunk') bg = '#991b1b';
+                        else if (st === 'hit' && seg < ship.hitCount) bg = '#f97316';
+                        else if (st === 'hidden') bg = '#334155';
+                        return (
+                          <div
+                            key={seg}
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: 2,
+                              backgroundColor: bg,
+                              border: '1px solid #1e293b',
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                    {/* Status label */}
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: st === 'sunk' ? '#f87171' : st === 'hit' ? '#fb923c' : st === 'hidden' ? '#475569' : '#4ade80',
+                    }}>
+                      {st === 'sunk' ? 'SUNK' : st === 'hit' ? `HIT (${ship.hitCount}/${size})` : st === 'hidden' ? '?' : 'OK'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -38,106 +140,77 @@ export function ShootingPhase({
   myPlayerId,
   onFireShot,
   lastShotResult,
+  lastOpponentShotCoord,
+  lastIncomingShotCoord,
+  disabled = false,
 }: ShootingPhaseProps): React.ReactElement {
-  const isMyTurn = activePlayer === myPlayerId;
+  const isMyTurn = !disabled && activePlayer === myPlayerId;
 
-  const myCells = React.useMemo(
-    () => Array.from(myBoard.cells.values()),
-    [myBoard],
-  );
+  const myCells = React.useMemo(() => Array.from(myBoard.cells.values()), [myBoard]);
+  const opponentCells = React.useMemo(() => Array.from(opponentBoard.cells.values()), [opponentBoard]);
 
-  const opponentCells = React.useMemo(
-    () => Array.from(opponentBoard.cells.values()),
-    [opponentBoard],
-  );
-
-  // Shot result badge styling
   const resultStyle = React.useMemo((): React.CSSProperties => {
-    if (!lastShotResult) return {};
     switch (lastShotResult) {
-      case 'Sunk':
-        return { backgroundColor: '#991b1b', color: '#fff' };
-      case 'Hit':
-        return { backgroundColor: '#f97316', color: '#fff' };
-      case 'Miss':
-        return { backgroundColor: '#93c5fd', color: '#1e3a5f' };
-      default:
-        return { backgroundColor: '#e2e8f0', color: '#1e293b' };
+      case 'Sunk':  return { backgroundColor: '#991b1b', color: '#fff' };
+      case 'Hit':   return { backgroundColor: '#f97316', color: '#fff' };
+      case 'Miss':  return { backgroundColor: '#93c5fd', color: '#1e3a5f' };
+      default:      return { backgroundColor: '#e2e8f0', color: '#1e293b' };
     }
   }, [lastShotResult]);
 
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: 16, backgroundColor: '#0f172a', minHeight: '100vh', color: '#f8fafc' }}>
       {/* Turn indicator */}
-      <div
-        style={{
-          marginBottom: 16,
-          padding: '10px 16px',
-          borderRadius: 8,
-          backgroundColor: isMyTurn ? '#eff6ff' : '#f8fafc',
-          border: `2px solid ${isMyTurn ? '#3b82f6' : '#e2e8f0'}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          flexWrap: 'wrap',
-        }}
-      >
-        <span
-          style={{
-            fontSize: 15,
-            fontWeight: 600,
-            color: isMyTurn ? '#1d4ed8' : '#64748b',
-          }}
-        >
-          {isMyTurn ? '🎯 Your turn — click a cell to fire!' : '⏳ Waiting for opponent…'}
+      <div style={{
+        marginBottom: 16,
+        padding: '10px 16px',
+        borderRadius: 8,
+        backgroundColor: isMyTurn ? '#1e3a5f' : '#1e293b',
+        border: `2px solid ${isMyTurn ? '#3b82f6' : '#334155'}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        flexWrap: 'wrap',
+      }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: isMyTurn ? '#93c5fd' : '#64748b' }}>
+          {disabled ? '🤖 AI is thinking…' : isMyTurn ? '🎯 Your turn — click a cell to fire!' : '⏳ Waiting for opponent…'}
         </span>
-
-        {/* Shot result feedback */}
         {lastShotResult && (
-          <span
-            aria-live="polite"
-            style={{
-              padding: '4px 10px',
-              borderRadius: 20,
-              fontSize: 13,
-              fontWeight: 600,
-              ...resultStyle,
-            }}
-          >
+          <span aria-live="polite" style={{ padding: '4px 10px', borderRadius: 20, fontSize: 13, fontWeight: 600, ...resultStyle }}>
             Last shot: {lastShotResult}
           </span>
         )}
       </div>
 
-      {/* Boards */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 32,
-          flexWrap: 'wrap',
-          alignItems: 'flex-start',
-        }}
-      >
-        {/* Opponent board — fire shots here */}
+      {/* Main layout: fleet panel | opponent board | my board | fleet panel */}
+      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+
+        {/* My fleet status */}
+        <FleetPanel ships={myBoard.ships} label="My Fleet" />
+
+        {/* Opponent board */}
         <div>
           <BoardGrid
             cells={opponentCells}
-            // Do NOT pass ships for opponent board — only shot results visible
             onCellClick={isMyTurn ? onFireShot : undefined}
             disabled={!isMyTurn}
             label="Opponent's Board"
+            lastShotCoord={lastOpponentShotCoord}
           />
         </div>
 
-        {/* Own board — ships visible, incoming shots shown */}
+        {/* My board */}
         <div>
           <BoardGrid
             cells={myCells}
             ships={myBoard.ships}
-            // Own board is never clickable
             label="Your Board"
+            lastShotCoord={lastIncomingShotCoord}
           />
         </div>
+
+        {/* Opponent fleet status (hidden — show only sunk ships) */}
+        <FleetPanel ships={opponentBoard.ships} label="Enemy Fleet" hidden={false} />
       </div>
     </div>
   );

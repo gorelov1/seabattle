@@ -20,6 +20,8 @@ import {
   FLEET_SPEC,
   PlacementError,
   Orientation,
+  ShotOutcome,
+  serialize as serializeCoord,
 } from '@sea-battle/domain';
 import type { Board, Coordinate, ShipPlacement } from '@sea-battle/domain';
 
@@ -63,6 +65,10 @@ interface LocalGameState {
   winner?: string;
   lastShotResult?: string;
   placementError?: string;
+  /** Serialized coord of the last shot I fired at the opponent board */
+  lastOpponentShotCoord?: string;
+  /** Serialized coord of the last shot the opponent fired at my board */
+  lastIncomingShotCoord?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,27 +245,72 @@ export default function App(): React.ReactElement {
     } : prev);
   }, [localGameState]);
 
+  const [aiThinking, setAiThinking] = React.useState(false);
+
   // ---------------------------------------------------------------------------
   // Local game — shooting handler
   // ---------------------------------------------------------------------------
 
   const handleFireShot = React.useCallback((coord: Coordinate) => {
-    if (!localGameState) return;
+    if (!localGameState || aiThinking) return;
     const { game, myPlayerId } = localGameState;
     const result = game.fireShot(myPlayerId, coord);
     if (!result.ok) return;
     const { outcome, winner } = result.value;
     const state = game.getState();
-    setLocalGameState((prev) => prev ? {
-      ...prev,
-      myBoard: state.boardA,
-      opponentBoard: state.boardB,
-      activePlayer: state.activePlayer,
-      lastShotResult: outcome,
-      phase: winner ? 'finished' : 'shooting',
-      winner: winner?.playerId,
-    } : prev);
-  }, [localGameState]);
+    const shotCoord = serializeCoord(coord);
+
+    // Detect the AI's last incoming shot by finding which cell on boardA changed
+    let lastIncoming: string | undefined = localGameState.lastIncomingShotCoord;
+    if (screen === 'aiGame') {
+      const oldBoardA = localGameState.myBoard;
+      const newBoardA = state.boardA;
+      for (const [key, newCell] of newBoardA.cells) {
+        const oldCell = oldBoardA.cells.get(key);
+        if (oldCell && oldCell.status !== newCell.status && newCell.status !== 'Unshot') {
+          lastIncoming = key;
+        }
+      }
+    }
+
+    if (screen === 'aiGame' && !winner && outcome === ShotOutcome.Miss) {
+      // Human fired a Miss → AI already ran synchronously, turn is back to human.
+      // Show the human shot first, then reveal the AI's response after a short delay.
+      setLocalGameState((prev) => prev ? {
+        ...prev,
+        opponentBoard: result.value.updatedBoard,
+        lastShotResult: outcome,
+        lastOpponentShotCoord: shotCoord,
+        lastIncomingShotCoord: prev.lastIncomingShotCoord,
+      } : prev);
+
+      setAiThinking(true);
+      setTimeout(() => {
+        setAiThinking(false);
+        setLocalGameState((prev) => prev ? {
+          ...prev,
+          myBoard: state.boardA,
+          opponentBoard: state.boardB,
+          activePlayer: state.activePlayer,
+          phase: 'shooting',
+          lastIncomingShotCoord: lastIncoming,
+        } : prev);
+      }, 800);
+    } else {
+      // Human hit/sunk (keeps turn) or game over — update immediately
+      setLocalGameState((prev) => prev ? {
+        ...prev,
+        myBoard: state.boardA,
+        opponentBoard: state.boardB,
+        activePlayer: state.activePlayer,
+        lastShotResult: outcome,
+        phase: winner ? 'finished' : 'shooting',
+        winner: winner?.playerId,
+        lastOpponentShotCoord: shotCoord,
+        lastIncomingShotCoord: lastIncoming,
+      } : prev);
+    }
+  }, [localGameState, screen, aiThinking]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -364,6 +415,8 @@ export default function App(): React.ReactElement {
         reason="normal"
         onPlayAgain={screen === 'aiGame' ? startAiGame : startLocalGame}
         onMainMenu={goToMainMenu}
+        myBoard={myBoard}
+        opponentBoard={opponentBoard}
       />
     );
   }
@@ -389,6 +442,9 @@ export default function App(): React.ReactElement {
       myPlayerId={myPlayerId}
       onFireShot={handleFireShot}
       lastShotResult={lastShotResult}
+      lastOpponentShotCoord={localGameState.lastOpponentShotCoord}
+      lastIncomingShotCoord={localGameState.lastIncomingShotCoord}
+      disabled={aiThinking}
     />
   );
 }

@@ -212,7 +212,8 @@ export class LocalGame {
     // Check for victory on the updated opponent board
     const victoryOption = checkVictory(updatedBoard);
     if (victoryOption.some) {
-      this.winner = victoryOption.value;
+      // The winner is the player who fired the shot (the shooter), not the board owner
+      this.winner = { playerId: playerId };
       this.turnState = { ...this.turnState, phase: TurnPhase.Finished };
       return {
         ok: true,
@@ -301,7 +302,8 @@ export class LocalGame {
       // Check for AI victory
       const victoryOption = checkVictory(aiUpdatedBoard);
       if (victoryOption.some) {
-        this.winner = victoryOption.value;
+        // AI is the winner (the shooter)
+        this.winner = { playerId: this.playerBId };
         this.turnState = { ...this.turnState, phase: TurnPhase.Finished };
         return;
       }
