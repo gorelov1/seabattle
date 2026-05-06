@@ -44,6 +44,11 @@ export declare class LocalGame {
      */
     placeShip(playerId: string, placement: ShipPlacement): Result<void, PlacementError | string>;
     /**
+     * Removes the ship occupying the given coordinate from the player's board.
+     * Only valid during the Placement phase.
+     */
+    removeShip(playerId: string, coord: Coordinate): Result<void, string>;
+    /**
      * Transitions from Placement to Shooting phase.
      *
      * Fails if either fleet is not ready (isFleetReady returns false).
@@ -76,9 +81,17 @@ export declare class LocalGame {
      */
     getState(): LocalGameState;
     /**
-     * Runs AI turns automatically until the AI fires a Miss or the game ends.
-     * Called after a human Miss in AI mode.
+     * Fires one shot on behalf of the AI opponent (playerB in 'ai' mode).
+     * The AI chooses its coordinate automatically via chooseShot.
+     *
+     * Returns the shot result, or an error if it's not the AI's turn.
+     * The caller is responsible for calling this repeatedly (with delays)
+     * until the AI misses or the game ends.
      */
-    private runAiTurns;
+    fireAiShot(): Result<ShotResult & {
+        winner?: Winner;
+    }, string>;
+    /** Returns true when it is the AI's turn to shoot. */
+    isAiTurn(): boolean;
 }
 //# sourceMappingURL=localGame.d.ts.map

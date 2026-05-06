@@ -1,6 +1,7 @@
 /**
  * AIOpponent — computer-controlled player for single-player mode.
  * Requirements: 12.1, 12.2, 12.3, 12.4, 12.5
+ * v2 — axis-locked targeting
  */
 
 import { type Board, type Coordinate, CellStatus, type FleetSpec } from "./types.js";
@@ -55,25 +56,155 @@ export function chooseShot(opponentBoard: Board): Coordinate {
 
   // TARGET phase: if there are Hit cells, try to find orthogonal Unshot neighbors
   if (hitCells.length > 0) {
-    const targetCandidates = getOrthogonalUnshotNeighbors(
-      hitCells,
-      opponentBoard
-    );
+    // Group hit cells into connected components (each = one partially-hit ship)
+    const groups = groupConnectedHits(hitCells);
 
-    if (targetCandidates.length > 0) {
-      return pickRandom(targetCandidates);
+    // Sort groups: largest first (most hits = most information, closest to sunk)
+    const sortedGroups = [...groups].sort((a, b) => b.length - a.length);
+
+    // Debug: log what the AI is considering
+    if (hitCells.length >= 2) {
+      console.log('[AI] hits:', hitCells.map(c => c.col + c.row), '| groups:', groups.map(g => g.map(c => c.col + c.row)), '| activeGroup:', sortedGroups[0]?.map(c => c.col + c.row));
     }
-    // Fall through to HUNT if no valid target neighbors found
+
+    // Try each group in order until we find valid candidates
+    for (const group of sortedGroups) {
+      const axisLocked = group.length >= 2
+        ? getAxisLockedCandidates(group, opponentBoard)
+        : null;
+
+      const candidates =
+        (axisLocked !== null && axisLocked.length > 0)
+          ? axisLocked
+          : getOrthogonalUnshotNeighbors(group, opponentBoard);
+
+      if (candidates.length > 0) {
+        if (hitCells.length >= 2) {
+          console.log('[AI] targeting group:', group.map(c => c.col + c.row), '| axisLocked:', axisLocked?.map(c => c.col + c.row) ?? 'null', '| candidates:', candidates.map(c => c.col + c.row));
+        }
+        return pickRandom(candidates);
+      }
+      // This group is fully surrounded — try the next one
+    }
+    // All groups exhausted — fall through to hunt
   }
 
   // HUNT phase: pick a random Unshot cell
-  // unshotCells is guaranteed non-empty when the game is still in progress
   return pickRandom(unshotCells);
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Groups hit cells into connected components based on orthogonal adjacency.
+ * Each group represents a single partially-hit ship.
+ */
+function groupConnectedHits(hitCells: Coordinate[]): Coordinate[][] {
+  const COLUMN_ORDER = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] as const;
+  type Col = typeof COLUMN_ORDER[number];
+
+  const remaining = new Set(hitCells.map(c => c.col + c.row));
+  const groups: Coordinate[][] = [];
+
+  for (const start of hitCells) {
+    const key = start.col + start.row;
+    if (!remaining.has(key)) continue;
+
+    // BFS to find all orthogonally connected hit cells
+    const group: Coordinate[] = [];
+    const queue: Coordinate[] = [start];
+    remaining.delete(key);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      group.push(current);
+
+      const colIdx = COLUMN_ORDER.indexOf(current.col as Col);
+      const neighbors: Coordinate[] = [];
+      if (colIdx > 0) neighbors.push({ col: COLUMN_ORDER[colIdx - 1] as Coordinate['col'], row: current.row });
+      if (colIdx < 9) neighbors.push({ col: COLUMN_ORDER[colIdx + 1] as Coordinate['col'], row: current.row });
+      if (current.row > 1) neighbors.push({ col: current.col, row: (current.row - 1) as Coordinate['row'] });
+      if (current.row < 10) neighbors.push({ col: current.col, row: (current.row + 1) as Coordinate['row'] });
+
+      for (const n of neighbors) {
+        const nKey = n.col + n.row;
+        if (remaining.has(nKey)) {
+          remaining.delete(nKey);
+          queue.push(n);
+        }
+      }
+    }
+
+    groups.push(group);
+  }
+
+  return groups;
+}
+
+/**
+ * When 2+ Hit cells exist, determines the ship's axis (horizontal or vertical)
+ * and returns only the Unshot cells at the two ends of the hit run along that axis.
+ *
+ * If the hits span both axes (shouldn't happen in a valid game but guard anyway),
+ * returns null so the caller falls back to the general neighbor search.
+ */
+function getAxisLockedCandidates(
+  hitCells: Coordinate[],
+  board: Board
+): Coordinate[] | null {
+  const COLUMN_ORDER = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] as const;
+  type Col = typeof COLUMN_ORDER[number];
+
+  // Check if all hits share the same row (horizontal ship)
+  const allSameRow = hitCells.every((c) => c.row === hitCells[0].row);
+  // Check if all hits share the same column (vertical ship)
+  const allSameCol = hitCells.every((c) => c.col === hitCells[0].col);
+
+  if (!allSameRow && !allSameCol) {
+    // Hits are scattered — can't determine axis; fall back
+    return null;
+  }
+
+  const candidates: Coordinate[] = [];
+
+  if (allSameRow) {
+    const row = hitCells[0].row;
+    const colIndices = hitCells.map((c) => COLUMN_ORDER.indexOf(c.col as Col));
+    const minCol = Math.min(...colIndices);
+    const maxCol = Math.max(...colIndices);
+
+    if (minCol > 0) {
+      const leftCoord = { col: COLUMN_ORDER[minCol - 1] as Coordinate['col'], row };
+      const cell = board.cells.get(serialize(leftCoord));
+      if (cell?.status === CellStatus.Unshot) candidates.push(leftCoord);
+    }
+    if (maxCol < 9) {
+      const rightCoord = { col: COLUMN_ORDER[maxCol + 1] as Coordinate['col'], row };
+      const cell = board.cells.get(serialize(rightCoord));
+      if (cell?.status === CellStatus.Unshot) candidates.push(rightCoord);
+    }
+  } else {
+    const col = hitCells[0].col;
+    const rows = hitCells.map((c) => c.row);
+    const minRow = Math.min(...rows);
+    const maxRow = Math.max(...rows);
+
+    if (minRow > 1) {
+      const upCoord = { col, row: (minRow - 1) as Coordinate['row'] };
+      const cell = board.cells.get(serialize(upCoord));
+      if (cell?.status === CellStatus.Unshot) candidates.push(upCoord);
+    }
+    if (maxRow < 10) {
+      const downCoord = { col, row: (maxRow + 1) as Coordinate['row'] };
+      const cell = board.cells.get(serialize(downCoord));
+      if (cell?.status === CellStatus.Unshot) candidates.push(downCoord);
+    }
+  }
+
+  return candidates;
+}
 
 /**
  * Returns all orthogonal (up/down/left/right, not diagonal) neighbors of the

@@ -20,7 +20,6 @@ import {
   FLEET_SPEC,
   PlacementError,
   Orientation,
-  ShotOutcome,
   serialize as serializeCoord,
 } from '@sea-battle/domain';
 import type { Board, Coordinate, ShipPlacement } from '@sea-battle/domain';
@@ -203,6 +202,40 @@ export default function App(): React.ReactElement {
     setLocalGameState((prev) => prev ? { ...prev, myBoard: state.boardA, placementError: undefined } : prev);
   }, [localGameState]);
 
+  const handleRemoveShip = React.useCallback((coord: Coordinate) => {
+    if (!localGameState) return;
+    const { game, myPlayerId, opponentPlayerId } = localGameState;
+
+    // Remove the ship from the game's internal board
+    game.removeShip(myPlayerId, coord);
+    const state = game.getState();
+
+    // Rebuild a fresh LocalGame from the remaining ships to avoid any stale state
+    const newGame = new LocalGame(
+      screen === 'aiGame' ? 'ai' : 'local',
+      myPlayerId,
+      opponentPlayerId,
+    );
+    for (const ship of state.boardA.ships) {
+      const origin = ship.cells[0];
+      const isHorizontal = ship.cells.length === 1 || ship.cells[0].row === ship.cells[1].row;
+      newGame.placeShip(myPlayerId, {
+        type: ship.type,
+        origin,
+        orientation: isHorizontal ? Orientation.Horizontal : Orientation.Vertical,
+      });
+    }
+    const newState = newGame.getState();
+
+    setLocalGameState((prev) => prev ? {
+      ...prev,
+      game: newGame,
+      myBoard: newState.boardA,
+      opponentBoard: newState.boardB,
+      placementError: undefined,
+    } : prev);
+  }, [localGameState, screen]);
+
   const handleAutoPlace = React.useCallback(() => {
     if (!localGameState) return;
     const { myPlayerId } = localGameState;
@@ -248,6 +281,75 @@ export default function App(): React.ReactElement {
   const [aiThinking, setAiThinking] = React.useState(false);
 
   // ---------------------------------------------------------------------------
+  // AI turn loop — fires one shot, waits, then fires again if AI keeps turn
+  // ---------------------------------------------------------------------------
+
+  const runAiTurnStep = React.useCallback((game: LocalGame) => {
+    if (!game.isAiTurn()) return;
+
+    setAiThinking(true);
+    setTimeout(() => {
+      const aiResult = game.fireAiShot();
+      if (!aiResult.ok) {
+        setAiThinking(false);
+        return;
+      }
+
+      const state = game.getState();
+      const aiWinner = aiResult.value.winner;
+
+      // Find the coord the AI just shot (last changed cell on boardA)
+      let lastIncoming: string | undefined;
+      for (const [key, cell] of state.boardA.cells) {
+        if (cell.status !== 'Unshot') {
+          // We'll pick the most recently changed one — compare with current state
+          // Since we don't have the old board here, we track it via the result
+          lastIncoming = key; // will be overwritten to the last one
+        }
+      }
+      // Better: use autoMarked or find the sunk coord from the result
+      // The shot coord is the cell that changed from Unshot to Hit/Sunk/Miss
+      // We can find it by checking which cell in boardA is the one just shot
+      // Since we don't have the pre-shot board, use a ref approach below
+
+      setLocalGameState((prev) => {
+        if (!prev) return prev;
+        // Find the cell that changed (was Unshot before, now isn't)
+        let shotKey: string | undefined;
+        for (const [key, newCell] of state.boardA.cells) {
+          const oldCell = prev.myBoard.cells.get(key);
+          if (oldCell && oldCell.status === 'Unshot' && newCell.status !== 'Unshot') {
+            shotKey = key;
+          }
+        }
+        return {
+          ...prev,
+          myBoard: state.boardA,
+          opponentBoard: state.boardB,
+          activePlayer: state.activePlayer,
+          lastShotResult: aiResult.value.outcome,
+          phase: aiWinner ? 'finished' : 'shooting',
+          winner: aiWinner?.playerId,
+          lastIncomingShotCoord: shotKey ?? prev.lastIncomingShotCoord,
+        };
+      });
+
+      if (aiWinner) {
+        setAiThinking(false);
+        return;
+      }
+
+      // If AI keeps its turn (Hit or Sunk), schedule another shot
+      if (game.isAiTurn()) {
+        runAiTurnStep(game);
+      } else {
+        // AI missed — turn back to human
+        setAiThinking(false);
+      }
+    }, 800);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---------------------------------------------------------------------------
   // Local game — shooting handler
   // ---------------------------------------------------------------------------
 
@@ -256,61 +358,29 @@ export default function App(): React.ReactElement {
     const { game, myPlayerId } = localGameState;
     const result = game.fireShot(myPlayerId, coord);
     if (!result.ok) return;
-    const { outcome, winner } = result.value;
+
+    const outcome = result.value.outcome;
+    const winner = result.value.winner;
     const state = game.getState();
     const shotCoord = serializeCoord(coord);
 
-    // Detect the AI's last incoming shot by finding which cell on boardA changed
-    let lastIncoming: string | undefined = localGameState.lastIncomingShotCoord;
-    if (screen === 'aiGame') {
-      const oldBoardA = localGameState.myBoard;
-      const newBoardA = state.boardA;
-      for (const [key, newCell] of newBoardA.cells) {
-        const oldCell = oldBoardA.cells.get(key);
-        if (oldCell && oldCell.status !== newCell.status && newCell.status !== 'Unshot') {
-          lastIncoming = key;
-        }
-      }
-    }
+    // Update state with the human's shot immediately
+    setLocalGameState((prev) => prev ? {
+      ...prev,
+      myBoard: state.boardA,
+      opponentBoard: state.boardB,
+      activePlayer: state.activePlayer,
+      lastShotResult: outcome,
+      phase: winner ? 'finished' : 'shooting',
+      winner: winner?.playerId,
+      lastOpponentShotCoord: shotCoord,
+    } : prev);
 
-    if (screen === 'aiGame' && !winner && outcome === ShotOutcome.Miss) {
-      // Human fired a Miss → AI already ran synchronously, turn is back to human.
-      // Show the human shot first, then reveal the AI's response after a short delay.
-      setLocalGameState((prev) => prev ? {
-        ...prev,
-        opponentBoard: result.value.updatedBoard,
-        lastShotResult: outcome,
-        lastOpponentShotCoord: shotCoord,
-        lastIncomingShotCoord: prev.lastIncomingShotCoord,
-      } : prev);
-
-      setAiThinking(true);
-      setTimeout(() => {
-        setAiThinking(false);
-        setLocalGameState((prev) => prev ? {
-          ...prev,
-          myBoard: state.boardA,
-          opponentBoard: state.boardB,
-          activePlayer: state.activePlayer,
-          phase: 'shooting',
-          lastIncomingShotCoord: lastIncoming,
-        } : prev);
-      }, 800);
-    } else {
-      // Human hit/sunk (keeps turn) or game over — update immediately
-      setLocalGameState((prev) => prev ? {
-        ...prev,
-        myBoard: state.boardA,
-        opponentBoard: state.boardB,
-        activePlayer: state.activePlayer,
-        lastShotResult: outcome,
-        phase: winner ? 'finished' : 'shooting',
-        winner: winner?.playerId,
-        lastOpponentShotCoord: shotCoord,
-        lastIncomingShotCoord: lastIncoming,
-      } : prev);
+    // If the human missed and it's now the AI's turn, start the AI turn loop
+    if (!winner && game.isAiTurn()) {
+      runAiTurnStep(game);
     }
-  }, [localGameState, screen, aiThinking]);
+  }, [localGameState, aiThinking, runAiTurnStep]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -426,6 +496,7 @@ export default function App(): React.ReactElement {
       <PlacementPhase
         board={myBoard}
         onPlaceShip={handlePlaceShip}
+        onRemoveShip={handleRemoveShip}
         onReady={handleReady}
         onAutoPlace={screen === 'aiGame' ? handleAutoPlace : undefined}
         error={localGameState.placementError}

@@ -1,6 +1,7 @@
 /**
  * AIOpponent — computer-controlled player for single-player mode.
  * Requirements: 12.1, 12.2, 12.3, 12.4, 12.5
+ * v2 — axis-locked targeting
  */
 import { type Board, type Coordinate, type FleetSpec } from "./types.js";
 /**

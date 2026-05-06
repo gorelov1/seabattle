@@ -56,11 +56,14 @@ function shipStatus(ship: Ship): 'sunk' | 'hit' | 'healthy' {
 interface FleetPanelProps {
   ships: Ship[];
   label: string;
-  /** If true, ships are shown as "?" (opponent — don't reveal positions) */
-  hidden?: boolean;
+  /**
+   * When true (enemy fleet): hide ship type and hit count until fully sunk.
+   * Only show: unknown pips for healthy/hit ships, full info for sunk ships.
+   */
+  enemy?: boolean;
 }
 
-function FleetPanel({ ships, label, hidden = false }: FleetPanelProps): React.ReactElement {
+function FleetPanel({ ships, label, enemy = false }: FleetPanelProps): React.ReactElement {
   // Group by type
   const byType = React.useMemo(() => {
     const map = new Map<ShipType, Ship[]>();
@@ -71,60 +74,108 @@ function FleetPanel({ ships, label, hidden = false }: FleetPanelProps): React.Re
     return map;
   }, [ships]);
 
+  // For the enemy panel we only know about sunk ships — count them
+  const sunkByType = React.useMemo(() => {
+    if (!enemy) return null;
+    const map = new Map<ShipType, number>();
+    for (const type of SHIP_ORDER) map.set(type, 0);
+    for (const ship of ships) {
+      if (ship.sunk) map.set(ship.type, (map.get(ship.type) ?? 0) + 1);
+    }
+    return map;
+  }, [ships, enemy]);
+
+  // Total ships per type from FLEET_SPEC
+  const TOTAL: Record<ShipType, number> = {
+    [ShipType.Battleship]: 1,
+    [ShipType.Cruiser]:    2,
+    [ShipType.Destroyer]:  3,
+    [ShipType.PatrolBoat]: 4,
+  };
+
   return (
     <div style={{ minWidth: 160 }}>
       <div style={{ fontWeight: 700, fontSize: 13, color: '#94a3b8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
         {label}
       </div>
-      {SHIP_ORDER.map((type) => {
-        const group = byType.get(type) ?? [];
-        const size = shipSize(type);
-        return (
-          <div key={type} style={{ marginBottom: 6 }}>
-            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 3 }}>
-              {SHIP_LABEL[type]} ({size})
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {group.map((ship, i) => {
-                const st = hidden ? 'hidden' : shipStatus(ship);
-                return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {/* Segment pips */}
-                    <div style={{ display: 'flex', gap: 2 }}>
-                      {Array.from({ length: size }).map((_, seg) => {
-                        let bg = '#475569'; // healthy
-                        if (st === 'sunk') bg = '#991b1b';
-                        else if (st === 'hit' && seg < ship.hitCount) bg = '#f97316';
-                        else if (st === 'hidden') bg = '#334155';
-                        return (
+
+      {enemy ? (
+        // Enemy panel: always show the full fleet grid (1×4, 2×3, 3×2, 4×1).
+        // Multi-cell ships: pips stay grey until sunk (no hit hints).
+        // PatrolBoat (1-cell): sunk on first hit, so showing red is fine.
+        // Sunk ships: show red pips + "SUNK".
+        SHIP_ORDER.map((type) => {
+          const total = TOTAL[type];
+          const sunkCount = sunkByType?.get(type) ?? 0;
+          const size = shipSize(type);
+          return (
+            <div key={type} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 3 }}>
+                {SHIP_LABEL[type]} ({size})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {Array.from({ length: total }).map((_, i) => {
+                  const isSunk = i < sunkCount;
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        {Array.from({ length: size }).map((_, seg) => (
                           <div
                             key={seg}
                             style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: 2,
-                              backgroundColor: bg,
+                              width: 10, height: 10, borderRadius: 2,
+                              backgroundColor: isSunk ? '#991b1b' : '#334155',
                               border: '1px solid #1e293b',
                             }}
                           />
-                        );
-                      })}
+                        ))}
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: isSunk ? '#f87171' : '#475569' }}>
+                        {isSunk ? 'SUNK' : '?'}
+                      </span>
                     </div>
-                    {/* Status label */}
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: st === 'sunk' ? '#f87171' : st === 'hit' ? '#fb923c' : st === 'hidden' ? '#475569' : '#4ade80',
-                    }}>
-                      {st === 'sunk' ? 'SUNK' : st === 'hit' ? `HIT (${ship.hitCount}/${size})` : st === 'hidden' ? '?' : 'OK'}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      ) : (
+        // Own fleet panel: full info always visible
+        SHIP_ORDER.map((type) => {
+          const group = byType.get(type) ?? [];
+          const size = shipSize(type);
+          return (
+            <div key={type} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 3 }}>
+                {SHIP_LABEL[type]} ({size})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {group.map((ship, i) => {
+                  const st = shipStatus(ship);
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        {Array.from({ length: size }).map((_, seg) => {
+                          let bg = '#475569';
+                          if (st === 'sunk') bg = '#991b1b';
+                          else if (st === 'hit' && seg < ship.hitCount) bg = '#f97316';
+                          return (
+                            <div key={seg} style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: bg, border: '1px solid #1e293b' }} />
+                          );
+                        })}
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: st === 'sunk' ? '#f87171' : st === 'hit' ? '#fb923c' : '#4ade80' }}>
+                        {st === 'sunk' ? 'SUNK' : st === 'hit' ? `HIT (${ship.hitCount}/${size})` : 'OK'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -210,7 +261,7 @@ export function ShootingPhase({
         </div>
 
         {/* Opponent fleet status (hidden — show only sunk ships) */}
-        <FleetPanel ships={opponentBoard.ships} label="Enemy Fleet" hidden={false} />
+        <FleetPanel ships={opponentBoard.ships} label="Enemy Fleet" enemy />
       </div>
     </div>
   );

@@ -183,7 +183,7 @@ describe("LocalGame — local mode", () => {
         const finalState = game.getState();
         expect(finalState.phase).toBe(TurnPhase.Finished);
         expect(finalState.winner).toBeDefined();
-        expect(finalState.winner?.playerId).toBe("bob"); // VictoryDetector returns the board owner (bob's board was sunk)
+        expect(finalState.winner?.playerId).toBe("alice"); // alice fired the winning shot
     });
 });
 // ---------------------------------------------------------------------------
@@ -238,11 +238,10 @@ describe("LocalGame — AI mode", () => {
                     continue;
                 if (result.value.outcome === ShotOutcome.Miss) {
                     missFound = true;
-                    // After a Miss, the turn should have switched (either to AI and back, or game ended)
+                    // After a Miss, the turn switches to the AI (AI no longer runs automatically)
                     const afterState = game.getState();
-                    // Either the game ended (AI won) or it's human's turn again (AI fired a Miss)
                     const validState = afterState.phase === TurnPhase.Finished ||
-                        afterState.activePlayer === "human";
+                        afterState.activePlayer === "ai";
                     expect(validState).toBe(true);
                     break;
                 }

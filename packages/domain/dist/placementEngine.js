@@ -217,6 +217,37 @@ export function placeShip(board, placement) {
     return { ok: true, value: newBoard };
 }
 // ---------------------------------------------------------------------------
+// removeShip
+// ---------------------------------------------------------------------------
+/**
+ * Removes the ship that occupies the given coordinate from the board.
+ * Returns a new Board with the ship removed and its cells reset to Unshot.
+ * Returns the original board unchanged if no ship occupies that coordinate.
+ */
+export function removeShip(board, coord) {
+    const key = serialize(coord);
+    const shipIndex = board.ships.findIndex((s) => s.cells.some((c) => serialize(c) === key));
+    if (shipIndex === -1)
+        return board; // no ship at this coord
+    const ship = board.ships[shipIndex];
+    const newShips = board.ships.filter((_, i) => i !== shipIndex);
+    // Reset all cells of the removed ship back to Unshot
+    const newCells = new Map(board.cells);
+    for (const c of ship.cells) {
+        const cellKey = serialize(c);
+        const existing = newCells.get(cellKey);
+        if (existing) {
+            newCells.set(cellKey, { ...existing, status: CellStatus.Unshot });
+        }
+    }
+    return {
+        ...board,
+        cells: newCells,
+        ships: newShips,
+        ready: false, // removing a ship always makes the fleet not ready
+    };
+}
+// ---------------------------------------------------------------------------
 // isFleetReady
 // ---------------------------------------------------------------------------
 /**

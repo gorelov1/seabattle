@@ -4,8 +4,8 @@
  *
  * Requirements: 5.1, 5.3, 5.4, 9.3, 9.4, 12.1, 12.4, 12.5, 12.6
  */
-import { ShotOutcome, TurnPhase, FLEET_SPEC, } from "./types.js";
-import { createEmptyBoard, placeShip, isFleetReady } from "./placementEngine.js";
+import { TurnPhase, FLEET_SPEC, } from "./types.js";
+import { createEmptyBoard, placeShip, isFleetReady, removeShip } from "./placementEngine.js";
 import { processShot } from "./shotEngine.js";
 import { applyResult } from "./turnManager.js";
 import { check as checkVictory } from "./victoryDetector.js";
@@ -88,6 +88,27 @@ export class LocalGame {
         return { ok: false, error: "Unknown player ID" };
     }
     // -------------------------------------------------------------------------
+    // removeShip
+    // -------------------------------------------------------------------------
+    /**
+     * Removes the ship occupying the given coordinate from the player's board.
+     * Only valid during the Placement phase.
+     */
+    removeShip(playerId, coord) {
+        if (this.turnState.phase !== TurnPhase.Placement) {
+            return { ok: false, error: "Cannot remove ships outside of placement phase" };
+        }
+        if (playerId === this.playerAId) {
+            this.boardA = removeShip(this.boardA, coord);
+            return { ok: true, value: undefined };
+        }
+        if (playerId === this.playerBId) {
+            this.boardB = removeShip(this.boardB, coord);
+            return { ok: true, value: undefined };
+        }
+        return { ok: false, error: "Unknown player ID" };
+    }
+    // -------------------------------------------------------------------------
     // startMatch
     // -------------------------------------------------------------------------
     /**
@@ -157,7 +178,8 @@ export class LocalGame {
         // Check for victory on the updated opponent board
         const victoryOption = checkVictory(updatedBoard);
         if (victoryOption.some) {
-            this.winner = victoryOption.value;
+            // The winner is the player who fired the shot (the shooter), not the board owner
+            this.winner = { playerId: playerId };
             this.turnState = { ...this.turnState, phase: TurnPhase.Finished };
             return {
                 ok: true,
@@ -171,17 +193,6 @@ export class LocalGame {
             updatedBoard,
             autoMarked,
         };
-        // In AI mode: if the human fired a Miss, the turn switches to AI.
-        // Run AI turns automatically until the AI fires a Miss or the game ends.
-        if (this.mode === "ai" &&
-            outcome === ShotOutcome.Miss &&
-            this.turnState.phase === TurnPhase.Shooting) {
-            this.runAiTurns();
-        }
-        // Attach winner if the game ended during AI turns
-        if (this.winner !== undefined) {
-            humanResult.winner = this.winner;
-        }
         return { ok: true, value: humanResult };
     }
     // -------------------------------------------------------------------------
@@ -205,39 +216,44 @@ export class LocalGame {
         return state;
     }
     // -------------------------------------------------------------------------
-    // Private helpers
+    // fireAiShot
     // -------------------------------------------------------------------------
     /**
-     * Runs AI turns automatically until the AI fires a Miss or the game ends.
-     * Called after a human Miss in AI mode.
+     * Fires one shot on behalf of the AI opponent (playerB in 'ai' mode).
+     * The AI chooses its coordinate automatically via chooseShot.
+     *
+     * Returns the shot result, or an error if it's not the AI's turn.
+     * The caller is responsible for calling this repeatedly (with delays)
+     * until the AI misses or the game ends.
      */
-    runAiTurns() {
-        while (this.turnState.phase === TurnPhase.Shooting &&
-            this.turnState.activePlayer === this.playerBId) {
-            // AI fires at player A's board
-            const aiCoord = chooseShot(this.boardA);
-            const aiShotResult = processShot(this.boardA, aiCoord);
-            if (!aiShotResult.ok) {
-                // Should never happen (AI always picks an Unshot cell), but guard anyway
-                break;
-            }
-            const { outcome: aiOutcome, updatedBoard: aiUpdatedBoard } = aiShotResult.value;
-            this.boardA = aiUpdatedBoard;
-            // Check for AI victory
-            const victoryOption = checkVictory(aiUpdatedBoard);
-            if (victoryOption.some) {
-                this.winner = victoryOption.value;
-                this.turnState = { ...this.turnState, phase: TurnPhase.Finished };
-                return;
-            }
-            // Update turn state
-            this.turnState = applyResult(this.turnState, aiOutcome, [this.playerAId, this.playerBId]);
-            // If AI fired a Miss, turn switches back to human — stop the loop
-            if (aiOutcome === ShotOutcome.Miss) {
-                break;
-            }
-            // If AI fired Hit or Sunk, it keeps its turn — loop continues
+    fireAiShot() {
+        if (this.mode !== "ai") {
+            return { ok: false, error: "Not in AI mode" };
         }
+        if (this.turnState.activePlayer !== this.playerBId) {
+            return { ok: false, error: "Not the AI's turn" };
+        }
+        const aiCoord = chooseShot(this.boardA);
+        const shotResult = processShot(this.boardA, aiCoord);
+        if (!shotResult.ok) {
+            return { ok: false, error: "AI shot failed" };
+        }
+        const { outcome, updatedBoard, autoMarked } = shotResult.value;
+        this.boardA = updatedBoard;
+        const victoryOption = checkVictory(updatedBoard);
+        if (victoryOption.some) {
+            this.winner = { playerId: this.playerBId };
+            this.turnState = { ...this.turnState, phase: TurnPhase.Finished };
+            return { ok: true, value: { outcome, updatedBoard, autoMarked, winner: this.winner } };
+        }
+        this.turnState = applyResult(this.turnState, outcome, [this.playerAId, this.playerBId]);
+        return { ok: true, value: { outcome, updatedBoard, autoMarked } };
+    }
+    /** Returns true when it is the AI's turn to shoot. */
+    isAiTurn() {
+        return (this.mode === "ai" &&
+            this.turnState.phase === TurnPhase.Shooting &&
+            this.turnState.activePlayer === this.playerBId);
     }
 }
 //# sourceMappingURL=localGame.js.map

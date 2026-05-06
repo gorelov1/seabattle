@@ -2,7 +2,7 @@
  * PlacementEngine — validates and records ship placements on a board.
  * Requirements: 2.3, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 5.2
  */
-import { type Board, type FleetSpec, PlacementError, type Result, type ShipPlacement } from "./types.js";
+import { type Board, type Coordinate, type FleetSpec, PlacementError, type Result, type ShipPlacement } from "./types.js";
 /** Creates a fresh empty 10×10 board for the given owner. */
 export declare function createEmptyBoard(ownerId: string): Board;
 /**
@@ -18,6 +18,12 @@ export declare function createEmptyBoard(ownerId: string): Board;
  * On success returns a new Board (immutable — input board is not mutated).
  */
 export declare function placeShip(board: Board, placement: ShipPlacement): Result<Board, PlacementError>;
+/**
+ * Removes the ship that occupies the given coordinate from the board.
+ * Returns a new Board with the ship removed and its cells reset to Unshot.
+ * Returns the original board unchanged if no ship occupies that coordinate.
+ */
+export declare function removeShip(board: Board, coord: Coordinate): Board;
 /**
  * Returns true when all 10 ships of the standard FleetSpec are placed.
  * Requirements: 5.2

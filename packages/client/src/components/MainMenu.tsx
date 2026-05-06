@@ -151,6 +151,11 @@ export function MainMenu({
       >
         ⚙️ Account Settings
       </button>
+
+      {/* Build version */}
+      <div style={{ fontSize: 11, color: '#334155', marginTop: 8 }}>
+        build {__BUILD_TIME__}
+      </div>
     </div>
   );
 }

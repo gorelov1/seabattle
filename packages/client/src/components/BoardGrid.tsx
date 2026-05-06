@@ -17,10 +17,11 @@ export interface BoardGridProps {
   cells: Cell[];
   ships?: Ship[];
   onCellClick?: (coord: Coordinate) => void;
+  /** Called when a cell occupied by a ship is clicked (placement phase removal). */
+  onShipCellClick?: (coord: Coordinate) => void;
   disabled?: boolean;
   label?: string;
-  /** Coordinate of the most recent shot — that cell blinks. */
-  lastShotCoord?: string; // serialized, e.g. "G7"
+  lastShotCoord?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +92,7 @@ export function BoardGrid({
   cells,
   ships,
   onCellClick,
+  onShipCellClick,
   disabled = false,
   label,
   lastShotCoord,
@@ -119,11 +121,18 @@ export function BoardGrid({
 
   const handleCellClick = React.useCallback(
     (cell: Cell) => {
-      if (disabled || !onCellClick) return;
+      if (disabled) return;
+      const key = `${cell.coord.col}${cell.coord.row}`;
+      const hasShip = shipCellSet.has(key);
+      if (hasShip && onShipCellClick) {
+        onShipCellClick(cell.coord);
+        return;
+      }
+      if (!onCellClick) return;
       if (cell.status !== CellStatus.Unshot) return;
       onCellClick(cell.coord);
     },
-    [disabled, onCellClick],
+    [disabled, onCellClick, onShipCellClick, shipCellSet],
   );
 
   return (
@@ -160,7 +169,10 @@ export function BoardGrid({
               const hasShip = shipCellSet.has(key);
               const bg = cellBackground(cell.status, hasShip);
               const fg = cellForeground(cell.status);
-              const isClickable = !disabled && !!onCellClick && cell.status === CellStatus.Unshot;
+              const isClickable = !disabled && (
+                (!!onCellClick && cell.status === CellStatus.Unshot && !hasShip) ||
+                (!!onShipCellClick && hasShip && cell.status === CellStatus.Unshot)
+              );
               const isLastShot = lastShotCoord === key;
 
               return (
@@ -184,7 +196,9 @@ export function BoardGrid({
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: 11,
-                    cursor: isClickable ? 'pointer' : 'default',
+                    cursor: isClickable
+                      ? (hasShip && !!onShipCellClick ? 'not-allowed' : 'pointer')
+                      : 'default',
                     transition: 'background-color 0.15s',
                   }}
                 >

@@ -21,12 +21,10 @@ import { BoardGrid } from './BoardGrid';
 export interface PlacementPhaseProps {
   board: Board;
   onPlaceShip: (placement: ShipPlacement) => void;
+  onRemoveShip: (coord: Coordinate) => void;
   onReady: () => void;
-  /** Optional — shows "Auto-place" button in AI mode. */
   onAutoPlace?: () => void;
-  /** Placement error message to display. */
   error?: string;
-  /** Whether the fleet is fully placed and ready. */
   isReady: boolean;
 }
 
@@ -83,6 +81,7 @@ function countPlaced(board: Board): Record<ShipType, number> {
 export function PlacementPhase({
   board,
   onPlaceShip,
+  onRemoveShip,
   onReady,
   onAutoPlace,
   error,
@@ -110,6 +109,14 @@ export function PlacementPhase({
     [onPlaceShip, selectedType, orientation],
   );
 
+  // Clicking an occupied ship cell removes that ship
+  const handleShipCellClick = React.useCallback(
+    (coord: Coordinate) => {
+      onRemoveShip(coord);
+    },
+    [onRemoveShip],
+  );
+
   const cells = React.useMemo(() => Array.from(board.cells.values()), [board]);
 
   return (
@@ -120,7 +127,8 @@ export function PlacementPhase({
           cells={cells}
           ships={board.ships}
           onCellClick={handleCellClick}
-          label="Your Board — Place Your Ships"
+          onShipCellClick={handleShipCellClick}
+          label="Your Board — Place Your Ships (click a ship to remove it)"
         />
       </div>
 
