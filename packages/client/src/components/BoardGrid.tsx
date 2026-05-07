@@ -35,13 +35,14 @@ const COLUMNS: Column[] = [
 
 const ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
-// Cell size: fit 11 columns (10 cells + 1 label) into the available width.
-// On mobile we use the smaller of screen dimensions; on desktop cap at 36px.
+// Cell size: fit 11 columns (10 cells + 1 label) into the screen width.
+// Subtract horizontal padding (16px total) and divide by 11 slots.
+// Cap at 36px on large screens, minimum 22px on very small phones.
 function calcCellSize(): number {
-  const available = Math.min(window.innerWidth, window.innerHeight, 420);
-  // 11 slots (label col + 10 cells), minus 8px padding each side
-  const size = Math.floor((available - 16) / 11);
-  return Math.max(24, Math.min(size, 36));
+  // Use innerWidth — the board is always laid out horizontally
+  const w = window.innerWidth;
+  const size = Math.floor((w - 16) / 11);
+  return Math.max(22, Math.min(size, 36));
 }
 
 function useCellSize(): number {

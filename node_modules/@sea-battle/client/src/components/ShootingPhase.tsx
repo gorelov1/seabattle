@@ -181,6 +181,56 @@ function FleetPanel({ ships, label, enemy = false }: FleetPanelProps): React.Rea
 }
 
 // ---------------------------------------------------------------------------
+// CompactFleetPanel — horizontal single-row summary for mobile
+// ---------------------------------------------------------------------------
+
+interface CompactFleetPanelProps {
+  ships: Ship[];
+  enemy?: boolean;
+}
+
+function CompactFleetPanel({ ships, enemy = false }: CompactFleetPanelProps): React.ReactElement {
+  const TOTAL: Record<ShipType, number> = {
+    [ShipType.Battleship]: 1,
+    [ShipType.Cruiser]:    2,
+    [ShipType.Destroyer]:  3,
+    [ShipType.PatrolBoat]: 4,
+  };
+
+  const sunkByType = React.useMemo(() => {
+    const map = new Map<ShipType, number>();
+    for (const type of SHIP_ORDER) map.set(type, 0);
+    for (const ship of ships) {
+      if (ship.sunk) map.set(ship.type, (map.get(ship.type) ?? 0) + 1);
+    }
+    return map;
+  }, [ships]);
+
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', padding: '4px 8px' }}>
+      {SHIP_ORDER.map((type) => {
+        const total = TOTAL[type];
+        const size = shipSize(type);
+        const sunkCount = sunkByType.get(type) ?? 0;
+        const hitCount = enemy ? 0 : ships.filter(s => s.type === type && !s.sunk).reduce((n, s) => n + s.hitCount, 0);
+
+        return Array.from({ length: total }).map((_, i) => {
+          const isSunk = i < sunkCount;
+          return (
+            <div key={`${type}-${i}`} style={{ display: 'flex', gap: 1 }}>
+              {Array.from({ length: size }).map((_, seg) => {
+                let bg = isSunk ? '#991b1b' : (enemy ? '#334155' : (seg < hitCount && !isSunk ? '#f97316' : '#475569'));
+                return <div key={seg} style={{ width: 8, height: 8, borderRadius: 1, backgroundColor: bg, border: '1px solid #1e293b' }} />;
+              })}
+            </div>
+          );
+        });
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ShootingPhase component
 // ---------------------------------------------------------------------------
 
@@ -264,7 +314,7 @@ export function ShootingPhase({
       {/* Board area — scrollable if needed */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
         {activeTab === 'attack' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
             <BoardGrid
               cells={opponentCells}
               onCellClick={isMyTurn ? onFireShot : undefined}
@@ -272,17 +322,17 @@ export function ShootingPhase({
               label="Opponent's Board"
               lastShotCoord={lastOpponentShotCoord}
             />
-            <FleetPanel ships={opponentBoard.ships} label="Enemy Fleet" enemy />
+            <CompactFleetPanel ships={opponentBoard.ships} enemy />
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
             <BoardGrid
               cells={myCells}
               ships={myBoard.ships}
               label="Your Board"
               lastShotCoord={lastIncomingShotCoord}
             />
-            <FleetPanel ships={myBoard.ships} label="My Fleet" />
+            <CompactFleetPanel ships={myBoard.ships} />
           </div>
         )}
       </div>
