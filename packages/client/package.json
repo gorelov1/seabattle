@@ -11,7 +11,7 @@
     "cap:add:android": "npx cap add android",
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android",
-    "build:android": "npm run build && npx cap sync android",
+    "build:android": "npm run build && npx cap sync android && node -e \"const fs=require('fs');const f='android/app/capacitor.build.gradle';fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace(/VERSION_21/g,'VERSION_17'))\"",
     "icons:android": "node scripts/generate-icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -196,6 +196,7 @@ export function ShootingPhase({
   disabled = false,
 }: ShootingPhaseProps): React.ReactElement {
   const isMyTurn = !disabled && activePlayer === myPlayerId;
+  const [activeTab, setActiveTab] = React.useState<'attack' | 'defense'>('attack');
 
   const myCells = React.useMemo(() => Array.from(myBoard.cells.values()), [myBoard]);
   const opponentCells = React.useMemo(() => Array.from(opponentBoard.cells.values()), [opponentBoard]);
@@ -209,59 +210,81 @@ export function ShootingPhase({
     }
   }, [lastShotResult]);
 
+  // Switch to attack tab automatically when it's the player's turn
+  React.useEffect(() => {
+    if (isMyTurn) setActiveTab('attack');
+  }, [isMyTurn]);
+
   return (
-    <div style={{ padding: 16, backgroundColor: '#0f172a', minHeight: '100vh', color: '#f8fafc' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#0f172a', color: '#f8fafc' }}>
       {/* Turn indicator */}
       <div style={{
-        marginBottom: 16,
-        padding: '10px 16px',
-        borderRadius: 8,
+        padding: '8px 12px',
         backgroundColor: isMyTurn ? '#1e3a5f' : '#1e293b',
-        border: `2px solid ${isMyTurn ? '#3b82f6' : '#334155'}`,
+        borderBottom: `2px solid ${isMyTurn ? '#3b82f6' : '#334155'}`,
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
+        gap: 10,
+        flexShrink: 0,
         flexWrap: 'wrap',
       }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: isMyTurn ? '#93c5fd' : '#64748b' }}>
-          {disabled ? '🤖 AI is thinking…' : isMyTurn ? '🎯 Your turn — click a cell to fire!' : '⏳ Waiting for opponent…'}
+        <span style={{ fontSize: 13, fontWeight: 600, color: isMyTurn ? '#93c5fd' : '#64748b' }}>
+          {disabled ? '🤖 AI thinking…' : isMyTurn ? '🎯 Your turn' : '⏳ Opponent…'}
         </span>
         {lastShotResult && (
-          <span aria-live="polite" style={{ padding: '4px 10px', borderRadius: 20, fontSize: 13, fontWeight: 600, ...resultStyle }}>
-            Last shot: {lastShotResult}
+          <span aria-live="polite" style={{ padding: '3px 8px', borderRadius: 20, fontSize: 12, fontWeight: 600, ...resultStyle }}>
+            {lastShotResult}
           </span>
         )}
       </div>
 
-      {/* Main layout: fleet panel | opponent board | my board | fleet panel */}
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      {/* Tab switcher */}
+      <div style={{ display: 'flex', flexShrink: 0, borderBottom: '1px solid #334155' }}>
+        {(['attack', 'defense'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              flex: 1,
+              padding: '8px 0',
+              border: 'none',
+              borderBottom: activeTab === tab ? '2px solid #3b82f6' : '2px solid transparent',
+              backgroundColor: 'transparent',
+              color: activeTab === tab ? '#93c5fd' : '#64748b',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {tab === 'attack' ? '🎯 Attack' : '🛡️ Defense'}
+          </button>
+        ))}
+      </div>
 
-        {/* My fleet status */}
-        <FleetPanel ships={myBoard.ships} label="My Fleet" />
-
-        {/* Opponent board */}
-        <div>
-          <BoardGrid
-            cells={opponentCells}
-            onCellClick={isMyTurn ? onFireShot : undefined}
-            disabled={!isMyTurn}
-            label="Opponent's Board"
-            lastShotCoord={lastOpponentShotCoord}
-          />
-        </div>
-
-        {/* My board */}
-        <div>
-          <BoardGrid
-            cells={myCells}
-            ships={myBoard.ships}
-            label="Your Board"
-            lastShotCoord={lastIncomingShotCoord}
-          />
-        </div>
-
-        {/* Opponent fleet status (hidden — show only sunk ships) */}
-        <FleetPanel ships={opponentBoard.ships} label="Enemy Fleet" enemy />
+      {/* Board area — scrollable if needed */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
+        {activeTab === 'attack' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <BoardGrid
+              cells={opponentCells}
+              onCellClick={isMyTurn ? onFireShot : undefined}
+              disabled={!isMyTurn}
+              label="Opponent's Board"
+              lastShotCoord={lastOpponentShotCoord}
+            />
+            <FleetPanel ships={opponentBoard.ships} label="Enemy Fleet" enemy />
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <BoardGrid
+              cells={myCells}
+              ships={myBoard.ships}
+              label="Your Board"
+              lastShotCoord={lastIncomingShotCoord}
+            />
+            <FleetPanel ships={myBoard.ships} label="My Fleet" />
+          </div>
+        )}
       </div>
     </div>
   );

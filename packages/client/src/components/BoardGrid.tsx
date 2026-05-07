@@ -35,7 +35,24 @@ const COLUMNS: Column[] = [
 
 const ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
-const CELL_SIZE = 36;
+// Cell size: fit 11 columns (10 cells + 1 label) into the available width.
+// On mobile we use the smaller of screen dimensions; on desktop cap at 36px.
+function calcCellSize(): number {
+  const available = Math.min(window.innerWidth, window.innerHeight, 420);
+  // 11 slots (label col + 10 cells), minus 8px padding each side
+  const size = Math.floor((available - 16) / 11);
+  return Math.max(24, Math.min(size, 36));
+}
+
+function useCellSize(): number {
+  const [size, setSize] = React.useState(calcCellSize);
+  React.useEffect(() => {
+    const handler = () => setSize(calcCellSize());
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return size;
+}
 
 // ---------------------------------------------------------------------------
 // Color helpers
@@ -98,6 +115,8 @@ export function BoardGrid({
   lastShotCoord,
 }: BoardGridProps): React.ReactElement {
   React.useEffect(() => { ensureBlinkStyle(); }, []);
+
+  const CELL_SIZE = useCellSize();
 
   const cellMap = React.useMemo(() => {
     const map = new Map<string, Cell>();

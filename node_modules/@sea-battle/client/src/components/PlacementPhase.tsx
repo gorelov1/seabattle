@@ -120,7 +120,7 @@ export function PlacementPhase({
   const cells = React.useMemo(() => Array.from(board.cells.values()), [board]);
 
   return (
-    <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', padding: 16 }}>
+    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', padding: 8, backgroundColor: '#0f172a', minHeight: '100%', color: '#f8fafc' }}>
       {/* Left panel: board */}
       <div>
         <BoardGrid

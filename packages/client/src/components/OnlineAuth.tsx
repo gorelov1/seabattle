@@ -7,7 +7,7 @@
 import React from 'react';
 import { network } from '../network';
 import type { AuthToken, UserAccount } from '../types';
-import { ICON_LIBRARY } from '../iconLibrary';
+import { ICON_LIBRARY, iconEmoji } from '../iconLibrary';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -127,7 +127,7 @@ export function OnlineAuth({ onAuth, onBack }: OnlineAuthProps): React.ReactElem
                     }}
                     title={icon}
                   >
-                    {icon}
+                    {iconEmoji(icon)}
                   </button>
                 ))}
               </div>

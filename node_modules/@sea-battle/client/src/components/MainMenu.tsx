@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { iconEmoji } from '../iconLibrary';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -38,9 +39,9 @@ export function MainMenu({
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: '100vh',
-        padding: 32,
-        gap: 24,
+        minHeight: '100%',
+        padding: 24,
+        gap: 20,
         backgroundColor: '#0f172a',
         color: '#f8fafc',
       }}
@@ -71,7 +72,7 @@ export function MainMenu({
       >
         {currentUser ? (
           <>
-            <span style={{ fontSize: 22 }}>{currentUser.profileIcon}</span>
+            <span style={{ fontSize: 22 }}>{iconEmoji(currentUser.profileIcon)}</span>
             <span style={{ fontWeight: 600, color: '#e2e8f0' }}>
               {currentUser.displayName}
             </span>
