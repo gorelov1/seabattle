@@ -246,7 +246,6 @@ export function ShootingPhase({
   disabled = false,
 }: ShootingPhaseProps): React.ReactElement {
   const isMyTurn = !disabled && activePlayer === myPlayerId;
-  const [activeTab, setActiveTab] = React.useState<'attack' | 'defense'>('attack');
 
   const myCells = React.useMemo(() => Array.from(myBoard.cells.values()), [myBoard]);
   const opponentCells = React.useMemo(() => Array.from(opponentBoard.cells.values()), [opponentBoard]);
@@ -260,80 +259,58 @@ export function ShootingPhase({
     }
   }, [lastShotResult]);
 
-  // Switch to attack tab automatically when it's the player's turn
-  React.useEffect(() => {
-    if (isMyTurn) setActiveTab('attack');
-  }, [isMyTurn]);
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#0f172a', color: '#f8fafc' }}>
-      {/* Turn indicator */}
+
+      {/* Both boards side by side — no scrolling */}
+      <div style={{ flex: 1, display: 'flex', gap: 4, padding: 4, alignItems: 'flex-start', overflow: 'hidden' }}>
+
+        {/* Opponent board (attack) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1 }}>Enemy</div>
+          <BoardGrid
+            cells={opponentCells}
+            onCellClick={isMyTurn ? onFireShot : undefined}
+            disabled={!isMyTurn}
+            lastShotCoord={lastOpponentShotCoord}
+            compact
+          />
+          <CompactFleetPanel ships={opponentBoard.ships} enemy />
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: 1, backgroundColor: '#334155', alignSelf: 'stretch', flexShrink: 0 }} />
+
+        {/* My board (defense) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1 }}>Mine</div>
+          <BoardGrid
+            cells={myCells}
+            ships={myBoard.ships}
+            lastShotCoord={lastIncomingShotCoord}
+            compact
+          />
+          <CompactFleetPanel ships={myBoard.ships} />
+        </div>
+      </div>
+
+      {/* Turn indicator bar — at the bottom, away from camera notch */}
       <div style={{
         padding: '8px 12px',
         backgroundColor: isMyTurn ? '#1e3a5f' : '#1e293b',
-        borderBottom: `2px solid ${isMyTurn ? '#3b82f6' : '#334155'}`,
+        borderTop: `2px solid ${isMyTurn ? '#3b82f6' : '#334155'}`,
         display: 'flex',
         alignItems: 'center',
-        gap: 10,
+        gap: 8,
         flexShrink: 0,
-        flexWrap: 'wrap',
       }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: isMyTurn ? '#93c5fd' : '#64748b' }}>
-          {disabled ? '🤖 AI thinking…' : isMyTurn ? '🎯 Your turn' : '⏳ Opponent…'}
+        <span style={{ fontSize: 13, fontWeight: 600, color: isMyTurn ? '#93c5fd' : '#64748b', flex: 1 }}>
+          {disabled ? '🤖 AI thinking…' : isMyTurn ? '🎯 Your turn — tap to fire' : '⏳ Opponent…'}
         </span>
         {lastShotResult && (
-          <span aria-live="polite" style={{ padding: '3px 8px', borderRadius: 20, fontSize: 12, fontWeight: 600, ...resultStyle }}>
+          <span aria-live="polite" style={{ padding: '2px 8px', borderRadius: 20, fontSize: 12, fontWeight: 600, ...resultStyle }}>
             {lastShotResult}
           </span>
-        )}
-      </div>
-
-      {/* Tab switcher */}
-      <div style={{ display: 'flex', flexShrink: 0, borderBottom: '1px solid #334155' }}>
-        {(['attack', 'defense'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex: 1,
-              padding: '8px 0',
-              border: 'none',
-              borderBottom: activeTab === tab ? '2px solid #3b82f6' : '2px solid transparent',
-              backgroundColor: 'transparent',
-              color: activeTab === tab ? '#93c5fd' : '#64748b',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {tab === 'attack' ? '🎯 Attack' : '🛡️ Defense'}
-          </button>
-        ))}
-      </div>
-
-      {/* Board area — scrollable if needed */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-        {activeTab === 'attack' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-            <BoardGrid
-              cells={opponentCells}
-              onCellClick={isMyTurn ? onFireShot : undefined}
-              disabled={!isMyTurn}
-              label="Opponent's Board"
-              lastShotCoord={lastOpponentShotCoord}
-            />
-            <CompactFleetPanel ships={opponentBoard.ships} enemy />
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-            <BoardGrid
-              cells={myCells}
-              ships={myBoard.ships}
-              label="Your Board"
-              lastShotCoord={lastIncomingShotCoord}
-            />
-            <CompactFleetPanel ships={myBoard.ships} />
-          </div>
         )}
       </div>
     </div>

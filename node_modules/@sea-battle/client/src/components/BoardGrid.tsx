@@ -17,11 +17,14 @@ export interface BoardGridProps {
   cells: Cell[];
   ships?: Ship[];
   onCellClick?: (coord: Coordinate) => void;
-  /** Called when a cell occupied by a ship is clicked (placement phase removal). */
   onShipCellClick?: (coord: Coordinate) => void;
+  onCellHover?: (coord: Coordinate | null) => void;
   disabled?: boolean;
   label?: string;
   lastShotCoord?: string;
+  ghostCells?: Map<string, 'valid' | 'invalid'>;
+  /** When true, sizes cells for half-screen width (side-by-side layout). */
+  compact?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,23 +38,23 @@ const COLUMNS: Column[] = [
 
 const ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
-// Cell size: fit 11 columns (10 cells + 1 label) into the screen width.
-// Subtract horizontal padding (16px total) and divide by 11 slots.
-// Cap at 36px on large screens, minimum 22px on very small phones.
-function calcCellSize(): number {
-  // Use innerWidth — the board is always laid out horizontally
-  const w = window.innerWidth;
-  const size = Math.floor((w - 16) / 11);
-  return Math.max(22, Math.min(size, 36));
+// Cell size: fit 11 columns (10 cells + 1 label) into the available width.
+// `compact` mode uses half the screen width (for side-by-side boards).
+function calcCellSize(compact = false): number {
+  const w = compact
+    ? Math.floor((window.innerWidth - 8) / 2)  // half screen minus gap
+    : window.innerWidth;
+  const size = Math.floor((w - 8) / 11);
+  return Math.max(16, Math.min(size, 36));
 }
 
-function useCellSize(): number {
-  const [size, setSize] = React.useState(calcCellSize);
+function useCellSize(compact = false): number {
+  const [size, setSize] = React.useState(() => calcCellSize(compact));
   React.useEffect(() => {
-    const handler = () => setSize(calcCellSize());
+    const handler = () => setSize(calcCellSize(compact));
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
-  }, []);
+  }, [compact]);
   return size;
 }
 
@@ -111,13 +114,16 @@ export function BoardGrid({
   ships,
   onCellClick,
   onShipCellClick,
+  onCellHover,
   disabled = false,
   label,
   lastShotCoord,
+  ghostCells,
+  compact = false,
 }: BoardGridProps): React.ReactElement {
   React.useEffect(() => { ensureBlinkStyle(); }, []);
 
-  const CELL_SIZE = useCellSize();
+  const CELL_SIZE = useCellSize(compact);
 
   const cellMap = React.useMemo(() => {
     const map = new Map<string, Cell>();
@@ -194,6 +200,7 @@ export function BoardGrid({
                 (!!onShipCellClick && hasShip && cell.status === CellStatus.Unshot)
               );
               const isLastShot = lastShotCoord === key;
+              const ghost = ghostCells?.get(key);
 
               return (
                 <div
@@ -205,12 +212,20 @@ export function BoardGrid({
                   className={isLastShot ? 'sea-last-shot' : undefined}
                   onClick={() => handleCellClick(cell)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCellClick(cell); }}
+                  onMouseEnter={onCellHover ? () => onCellHover(cell.coord) : undefined}
+                  onMouseLeave={onCellHover ? () => onCellHover(null) : undefined}
+                  onTouchStart={onCellHover ? () => onCellHover(cell.coord) : undefined}
                   style={{
                     width: CELL_SIZE,
                     height: CELL_SIZE,
-                    backgroundColor: bg,
+                    backgroundColor: ghost === 'valid' ? 'rgba(59,130,246,0.45)'
+                                   : ghost === 'invalid' ? 'rgba(220,38,38,0.45)'
+                                   : bg,
                     color: fg,
-                    border: isLastShot ? '2px solid #facc15' : '1px solid #cbd5e1',
+                    border: isLastShot ? '2px solid #facc15'
+                          : ghost === 'valid' ? '1px dashed #3b82f6'
+                          : ghost === 'invalid' ? '1px dashed #dc2626'
+                          : '1px solid #cbd5e1',
                     boxSizing: 'border-box',
                     display: 'flex',
                     alignItems: 'center',
@@ -219,12 +234,12 @@ export function BoardGrid({
                     cursor: isClickable
                       ? (hasShip && !!onShipCellClick ? 'not-allowed' : 'pointer')
                       : 'default',
-                    transition: 'background-color 0.15s',
+                    transition: 'background-color 0.1s',
                   }}
                 >
-                  {cell.status === CellStatus.Hit  && '🔥'}
-                  {cell.status === CellStatus.Sunk && '💥'}
-                  {cell.status === CellStatus.Miss && '·'}
+                  {!ghost && cell.status === CellStatus.Hit  && '🔥'}
+                  {!ghost && cell.status === CellStatus.Sunk && '💥'}
+                  {!ghost && cell.status === CellStatus.Miss && '·'}
                 </div>
               );
             })}
